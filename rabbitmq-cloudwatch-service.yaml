@@ -1,0 +1,72 @@
+Description: >
+    QOS Service RabbitMQ
+
+Parameters:
+
+    ECSCluster:
+        Type: String
+
+Resources:
+
+    Service: 
+        Type: AWS::ECS::Service
+        Properties:
+            Cluster: !Ref ECSCluster
+            DesiredCount: 1
+            TaskDefinition: !Ref TaskDefinition
+
+    TaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        DependsOn: IAMRole # This is the assignment of the Role to the Task. I forgot this line once, the next two hours weren't fun...
+        Properties:
+            Family: !Ref AWS::StackName
+            TaskRoleArn: !Ref IAMRole
+            ContainerDefinitions:
+                - Name: !Ref AWS::StackName
+                  Essential: true
+                  Image: !Sub adamsandor83/rabbitmqcloudwatch # This image doesn't actually exist right now
+                  LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-group: !Ref AWS::StackName
+                        awslogs-region: !Ref AWS::Region
+                  Environment:
+                    - Name: AWS_REGION
+                      Value: !Ref AWS::Region
+
+    # log to CloudWatch because it's good for you
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 365
+
+    # This is the important stuff
+    IAMRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub role-task-${AWS::StackName} # Doesn't matter too much but let's make it nice anyway
+            Path: / # No idea about this one but / seems to work
+            # This is the funky stuff.. don't try to understand just copy-paste. Source: http://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_IAM_role.html
+            AssumeRolePolicyDocument: |
+                {
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": [ "ecs-tasks.amazonaws.com" ]},
+                        "Action": [ "sts:AssumeRole" ]
+                    }]
+                }
+            Policies:
+                - PolicyName: !Sub ecs-task-${AWS::StackName}
+                  # You can add any actions here you want your container to be allowed to execute.
+                  PolicyDocument:
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cloudwatch:PutMetricData" # more actions if needed
+                                ],
+                                "Resource": "*"
+                        }]
+                    }
